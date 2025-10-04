@@ -249,7 +249,21 @@ void clampedExpVector(float* values, int* exponents, float* output, int N) {
   // Your solution should work for any value of
   // N and VECTOR_WIDTH, not just when VECTOR_WIDTH divides N
   //
-  
+  __cs149_vec_float result;
+  __cs149_mask maskAll;
+  __cs149_vec_float exps;
+  __cs149_vec_float result;
+
+  for (int i=0; i<N; i+=VECTOR_WIDTH) {
+    result = _cs149_vset_float(1.f);
+    _cs149_vload_float(exps, exponents+i, maskAll);    
+
+    for (int exp_index = 1; exp_index < EXP_MAX; exp_index++) {
+      _cs149_vlt_float(maskAll, exps, exp_index);
+      _cs149_vmult_float(result, result, values+i, maskAll);
+    }
+    _cs149_vstore_float(output+i, result);
+  }
 }
 
 // returns the sum of all elements in values
