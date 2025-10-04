@@ -22,11 +22,48 @@ extern void mandelbrotSerial(
     int maxIterations,
     int output[]);
 
+static inline int mandel(float c_re, float c_im, int count)
+{
+    float z_re = c_re, z_im = c_im;
+    int i;
+    for (i = 0; i < count; ++i) {
+
+        if (z_re * z_re + z_im * z_im > 4.f)
+            break;
+
+        float new_re = z_re*z_re - z_im*z_im;
+        float new_im = 2.f * z_re * z_im;
+        z_re = c_re + new_re;
+        z_im = c_im + new_im;
+    }
+
+    return i;
+}
 
 //
 // workerThreadStart --
 //
 // Thread entrypoint.
+void workerThreadStartBlocked(WorkerArgs * const args) {
+
+    // TODO FOR CS149 STUDENTS: Implement the body of the worker
+    // thread here. Each thread should make a call to mandelbrotSerial()
+    // to compute a part of the output image.  For example, in a
+    // program that uses two threads, thread 0 could compute the top
+    // half of the image and thread 1 could compute the bottom half.
+
+    double startTime = CycleTimer::currentSeconds();
+    int rowsPerThread = args->height / args->numThreads;
+    int remainder = args->height % args->numThreads;
+    int startRow = args->threadId * rowsPerThread + (args->threadId < remainder ? args->threadId : remainder);
+    int numRows = rowsPerThread + (args->threadId < remainder ? 1 : 0);
+    mandelbrotSerial(args->x0, args->y0, args->x1, args->y1, args->width, args->height, startRow, numRows, args->maxIterations, args->output);
+    double endTime = CycleTimer::currentSeconds();
+    printf("Thread %d took %f seconds\n", args->threadId, endTime - startTime);
+    // printf("Hello world from thread %d\n", args->threadId);
+}
+
+
 void workerThreadStart(WorkerArgs * const args) {
 
     // TODO FOR CS149 STUDENTS: Implement the body of the worker
@@ -35,7 +72,22 @@ void workerThreadStart(WorkerArgs * const args) {
     // program that uses two threads, thread 0 could compute the top
     // half of the image and thread 1 could compute the bottom half.
 
-    printf("Hello world from thread %d\n", args->threadId);
+    double startTime = CycleTimer::currentSeconds();
+    float dx = (args->x1 - args->x0) / args->width;
+    float dy = (args->y1 - args->y0) / args->height;
+
+    for (int j = 0; j < args->height; ++j) {
+        for (int i = args->threadId; i < args->width; i += args->numThreads) {
+            float x = args->x0 + i * dx;
+            float y = args->y0 + j * dy;
+            int index = j * args->width + i;
+            args->output[index] = mandel(x, y, args->maxIterations);
+        }
+    }
+
+    double endTime = CycleTimer::currentSeconds();
+    printf("Thread %d took %f seconds\n", args->threadId, endTime - startTime);
+    // printf("Hello world from thread %d\n", args->threadId);
 }
 
 //
