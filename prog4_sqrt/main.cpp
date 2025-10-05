@@ -20,7 +20,7 @@ static void verifyResult(int N, float* result, float* gold) {
 
 int main() {
 
-    const unsigned int N = 200 * 1000 * 1000;
+    const unsigned int N = 20 * 1000 * 1000;
     const float initialGuess = 1.0f;
 
     float* values = new float[N];
@@ -32,11 +32,10 @@ int main() {
         // TODO: CS149 students.  Attempt to change the values in the
         // array here to meet the instructions in the handout: we want
         // to you generate best and worse-case speedups
-
+        
         // starter code populates array with random input values
-        values[i] = .001f + 2.998f
+        values[i] = (i % 2 == 0) ? 1.0f : 2.999f;
     }
-    printf("values[0] = %f\n", values[0]);
 
     // generate a gold version to check results
     for (unsigned int i=0; i<N; i++)
