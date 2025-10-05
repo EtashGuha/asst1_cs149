@@ -250,6 +250,7 @@ void clampedExpVector(float* values, int* exponents, float* output, int N) {
   __cs149_vec_float clamp = _cs149_vset_float(9.999999f);
   __cs149_vec_float one = _cs149_vset_float(1.f);  
   __cs149_vec_int zero_vec = _cs149_vset_int(0);  
+  __cs149_mask exp_zero;
   
   for (int i = 0; i < N; i += VECTOR_WIDTH) {
     if (i + VECTOR_WIDTH > N) {
