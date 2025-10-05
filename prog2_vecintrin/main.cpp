@@ -241,28 +241,42 @@ void clampedExpSerial(float* values, int* exponents, float* output, int N) {
 }
 
 void clampedExpVector(float* values, int* exponents, float* output, int N) {
-
-  //
-  // CS149 STUDENTS TODO: Implement your vectorized version of
-  // clampedExpSerial() here.
-  //
-  // Your solution should work for any value of
-  // N and VECTOR_WIDTH, not just when VECTOR_WIDTH divides N
-  //
   __cs149_vec_float result;
+  __cs149_mask maskACTUALLYALL;
   __cs149_mask maskAll;
-  __cs149_vec_float exps;
-  __cs149_vec_float result;
-
+  __cs149_vec_float x;
+  __cs149_vec_int exps;
+  __cs149_mask greater_than_clamp;
+  __cs149_vec_float clamp = _cs149_vset_float(9.999999f);
+  maskACTUALLYALL = _cs149_init_ones();
+  
   for (int i=0; i<N; i+=VECTOR_WIDTH) {
-    result = _cs149_vset_float(1.f);
-    _cs149_vload_float(exps, exponents+i, maskAll);    
+    if (i + VECTOR_WIDTH > N) {
+      __cs149_vec_int lane_indices = _cs149_vset_int(0);
+      for (int j = 0; j < VECTOR_WIDTH; j++) {
+          lane_indices.value[j] = i + j;  // Each lane gets its global index
+      }
+      __cs149_vec_int n_vec = _cs149_vset_int(N);
+      _cs149_vlt_int(maskACTUALLYALL, lane_indices, n_vec, maskACTUALLYALL);
+      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[0]);
+      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[1]);
+      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[2]);
+      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[3]);
+
+    } 
+    _cs149_vload_float(x, values+i, maskACTUALLYALL);
+    _cs149_vmove_float(result, x, maskACTUALLYALL); 
+    _cs149_vload_int(exps, exponents+i, maskACTUALLYALL);  
 
     for (int exp_index = 1; exp_index < EXP_MAX; exp_index++) {
-      _cs149_vlt_float(maskAll, exps, exp_index);
-      _cs149_vmult_float(result, result, values+i, maskAll);
+      __cs149_vec_int exp_index_vec = _cs149_vset_int(exp_index);
+      _cs149_vgt_int(maskAll, exps, exp_index_vec, maskACTUALLYALL); 
+      _cs149_vmult_float(result, result, x, maskAll); 
     }
-    _cs149_vstore_float(output+i, result);
+    
+    _cs149_vgt_float(greater_than_clamp, result, clamp, maskACTUALLYALL); 
+    _cs149_vmove_float(result, clamp, greater_than_clamp); 
+    _cs149_vstore_float(output+i, result, maskACTUALLYALL);
   }
 }
 
