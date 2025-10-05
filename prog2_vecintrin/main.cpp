@@ -248,25 +248,27 @@ void clampedExpVector(float* values, int* exponents, float* output, int N) {
   __cs149_vec_int exps;
   __cs149_mask greater_than_clamp;
   __cs149_vec_float clamp = _cs149_vset_float(9.999999f);
-  maskACTUALLYALL = _cs149_init_ones();
+  __cs149_vec_float one = _cs149_vset_float(1.f);  
+  __cs149_vec_int zero_vec = _cs149_vset_int(0);  
   
-  for (int i=0; i<N; i+=VECTOR_WIDTH) {
+  for (int i = 0; i < N; i += VECTOR_WIDTH) {
     if (i + VECTOR_WIDTH > N) {
       __cs149_vec_int lane_indices = _cs149_vset_int(0);
       for (int j = 0; j < VECTOR_WIDTH; j++) {
-          lane_indices.value[j] = i + j;  // Each lane gets its global index
+        lane_indices.value[j] = i + j;
       }
       __cs149_vec_int n_vec = _cs149_vset_int(N);
       _cs149_vlt_int(maskACTUALLYALL, lane_indices, n_vec, maskACTUALLYALL);
-      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[0]);
-      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[1]);
-      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[2]);
-      printf("maskACTUALLYALL: %d\n", maskACTUALLYALL.value[3]);
-
-    } 
+    } else {
+      maskACTUALLYALL = _cs149_init_ones();
+    }
+    
     _cs149_vload_float(x, values+i, maskACTUALLYALL);
     _cs149_vmove_float(result, x, maskACTUALLYALL); 
-    _cs149_vload_int(exps, exponents+i, maskACTUALLYALL);  
+    _cs149_vload_int(exps, exponents+i, maskACTUALLYALL);
+    
+    _cs149_veq_int(exp_zero, exps, zero_vec, maskACTUALLYALL);
+    _cs149_vmove_float(result, one, exp_zero);
 
     for (int exp_index = 1; exp_index < EXP_MAX; exp_index++) {
       __cs149_vec_int exp_index_vec = _cs149_vset_int(exp_index);
@@ -279,7 +281,6 @@ void clampedExpVector(float* values, int* exponents, float* output, int N) {
     _cs149_vstore_float(output+i, result, maskACTUALLYALL);
   }
 }
-
 // returns the sum of all elements in values
 float arraySumSerial(float* values, int N) {
   float sum = 0;
