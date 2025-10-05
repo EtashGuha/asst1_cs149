@@ -20,7 +20,7 @@ static void verifyResult(int N, float* result, float* gold) {
 
 int main() {
 
-    const unsigned int N = 20 * 1000 * 1000;
+    const unsigned int N = 200 * 1000 * 1000;
     const float initialGuess = 1.0f;
 
     float* values = new float[N];
@@ -33,9 +33,8 @@ int main() {
         // array here to meet the instructions in the handout: we want
         // to you generate best and worse-case speedups
 
-        values[i] = 1000000000000.0f;
         // starter code populates array with random input values
-        // values[i] = .001f + 2.998f * static_cast<float>(rand()) / RAND_MAX;
+        values[i] = .001f + 2.998f
     }
     printf("values[0] = %f\n", values[0]);
 
