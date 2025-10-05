@@ -74,57 +74,45 @@ double dist_calc(double *x, double *y, int nDim) {
  * Assigns each data point to its "closest" cluster centroid.
  */
 void computeAssignments(WorkerArgs *const args) {
-  double funcStart = CycleTimer::currentSeconds();
-  
-  double allocStart = CycleTimer::currentSeconds();
   double *minDist = new double[args->M];
-  double allocTime = CycleTimer::currentSeconds() - allocStart;
   
-  double initStart = CycleTimer::currentSeconds();
+  // Initialize arrays
   for (int m =0; m < args->M; m++) {
     minDist[m] = 1e30;
     args->clusterAssignments[m] = -1;
   }
-  double initTime = CycleTimer::currentSeconds() - initStart;
 
-  double assignStart = CycleTimer::currentSeconds();
-  double distTime = 0.0;
-  double updateTime = 0.0;
-  
   for (int k = args->start; k < args->end; k++) {
-    for (int m = 0; m < args->M; m++) {
-      double distStart = CycleTimer::currentSeconds();
-      double d = dist_calc(&args->data[m * args->N], &args->clusterCentroids[k * args->N], args->N);
-      distTime += CycleTimer::currentSeconds() - distStart;
-      
-      double updateStart = CycleTimer::currentSeconds();
-      if (d < minDist[m]) {
-        minDist[m] = d;
-        args->clusterAssignments[m] = k;
+    int numThreads = 16;
+    
+    std::vector<std::thread> workers;
+    int pointsPerThread = args->M / numThreads;
+    int remainingPoints = args->M % numThreads;
+    
+    for (int t = 0; t < numThreads; t++) {
+      int startM = t * pointsPerThread;
+      int endM = startM + pointsPerThread;
+      if (t == numThreads - 1) {
+        endM += remainingPoints;
       }
-      updateTime += CycleTimer::currentSeconds() - updateStart;
+      
+      workers.emplace_back([=]() {
+        for (int m = startM; m < endM; m++) {
+          double d = dist_calc(&args->data[m * args->N],
+                          &args->clusterCentroids[k * args->N], args->N);
+          if (d < minDist[m]) {
+            minDist[m] = d;
+            args->clusterAssignments[m] = k;
+          }
+        }
+      });
+    }
+    for (auto& worker : workers) {
+      worker.join();
     }
   }
-  double assignTime = CycleTimer::currentSeconds() - assignStart;
 
-  double freeStart = CycleTimer::currentSeconds();
   free(minDist);
-  double freeTime = CycleTimer::currentSeconds() - freeStart;
-  
-  double totalTime = CycleTimer::currentSeconds() - funcStart;
-  
-  printf("  computeAssignments breakdown:\n");
-  printf("    Total: %.3f ms\n", totalTime * 1000);
-  printf("    Allocation: %.3f ms (%.1f%%)\n", allocTime * 1000, (allocTime/totalTime)*100);
-  printf("    Init: %.3f ms (%.1f%%)\n", initTime * 1000, (initTime/totalTime)*100);
-  printf("    Distance calc: %.3f ms (%.1f%%)\n", distTime * 1000, (distTime/totalTime)*100);
-  printf("    Updates: %.3f ms (%.1f%%)\n", updateTime * 1000, (updateTime/totalTime)*100);
-  printf("    Free: %.3f ms (%.1f%%)\n", freeTime * 1000, (freeTime/totalTime)*100);
-  
-  double accountedTime = allocTime + initTime + distTime + updateTime + freeTime;
-  double unaccountedTime = totalTime - accountedTime;
-  printf("    Accounted: %.3f ms (%.1f%%)\n", accountedTime * 1000, (accountedTime/totalTime)*100);
-  printf("    Unaccounted: %.3f ms (%.1f%%)\n", unaccountedTime * 1000, (unaccountedTime/totalTime)*100);
 }
 
 /**
