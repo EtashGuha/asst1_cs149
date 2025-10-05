@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <thread>
+#include <vector>
 
 #include "CycleTimer.h"
 
@@ -44,7 +45,7 @@ static bool stoppingConditionMet(double *prevCost, double *currCost,
 }
 
 /**
- * Computes L2 distance between two points of dimension nDim.
+ * Computes L2 distance between two points of dimensiondist nDim.
  * 
  * @param x Pointer to the beginning of the array representing the first
  *     data point.
@@ -53,7 +54,15 @@ static bool stoppingConditionMet(double *prevCost, double *currCost,
  * @param nDim The dimensionality (number of elements) in each data point
  *     (must be the same for x and y).
  */
-double dist(double *x, double *y, int nDim) {
+void dist(double *x, double *y, int nDim, double *dist) {
+  double accum = 0.0;
+  for (int i = 0; i < nDim; i++) {
+    accum += pow((x[i] - y[i]), 2);
+  }
+  *dist = sqrt(accum);
+}
+
+double dist_calc(double *x, double *y, int nDim) {
   double accum = 0.0;
   for (int i = 0; i < nDim; i++) {
     accum += pow((x[i] - y[i]), 2);
@@ -65,27 +74,57 @@ double dist(double *x, double *y, int nDim) {
  * Assigns each data point to its "closest" cluster centroid.
  */
 void computeAssignments(WorkerArgs *const args) {
-  double *minDist = new double[args->M];
+  double funcStart = CycleTimer::currentSeconds();
   
-  // Initialize arrays
+  double allocStart = CycleTimer::currentSeconds();
+  double *minDist = new double[args->M];
+  double allocTime = CycleTimer::currentSeconds() - allocStart;
+  
+  double initStart = CycleTimer::currentSeconds();
   for (int m =0; m < args->M; m++) {
     minDist[m] = 1e30;
     args->clusterAssignments[m] = -1;
   }
+  double initTime = CycleTimer::currentSeconds() - initStart;
 
-  // Assign datapoints to closest centroids
+  double assignStart = CycleTimer::currentSeconds();
+  double distTime = 0.0;
+  double updateTime = 0.0;
+  
   for (int k = args->start; k < args->end; k++) {
     for (int m = 0; m < args->M; m++) {
-      double d = dist(&args->data[m * args->N],
-                      &args->clusterCentroids[k * args->N], args->N);
+      double distStart = CycleTimer::currentSeconds();
+      double d = dist_calc(&args->data[m * args->N], &args->clusterCentroids[k * args->N], args->N);
+      distTime += CycleTimer::currentSeconds() - distStart;
+      
+      double updateStart = CycleTimer::currentSeconds();
       if (d < minDist[m]) {
         minDist[m] = d;
         args->clusterAssignments[m] = k;
       }
+      updateTime += CycleTimer::currentSeconds() - updateStart;
     }
   }
+  double assignTime = CycleTimer::currentSeconds() - assignStart;
 
+  double freeStart = CycleTimer::currentSeconds();
   free(minDist);
+  double freeTime = CycleTimer::currentSeconds() - freeStart;
+  
+  double totalTime = CycleTimer::currentSeconds() - funcStart;
+  
+  printf("  computeAssignments breakdown:\n");
+  printf("    Total: %.3f ms\n", totalTime * 1000);
+  printf("    Allocation: %.3f ms (%.1f%%)\n", allocTime * 1000, (allocTime/totalTime)*100);
+  printf("    Init: %.3f ms (%.1f%%)\n", initTime * 1000, (initTime/totalTime)*100);
+  printf("    Distance calc: %.3f ms (%.1f%%)\n", distTime * 1000, (distTime/totalTime)*100);
+  printf("    Updates: %.3f ms (%.1f%%)\n", updateTime * 1000, (updateTime/totalTime)*100);
+  printf("    Free: %.3f ms (%.1f%%)\n", freeTime * 1000, (freeTime/totalTime)*100);
+  
+  double accountedTime = allocTime + initTime + distTime + updateTime + freeTime;
+  double unaccountedTime = totalTime - accountedTime;
+  printf("    Accounted: %.3f ms (%.1f%%)\n", accountedTime * 1000, (accountedTime/totalTime)*100);
+  printf("    Unaccounted: %.3f ms (%.1f%%)\n", unaccountedTime * 1000, (unaccountedTime/totalTime)*100);
 }
 
 /**
@@ -139,7 +178,7 @@ void computeCost(WorkerArgs *const args) {
   // Sum cost for all data points assigned to centroid
   for (int m = 0; m < args->M; m++) {
     int k = args->clusterAssignments[m];
-    accum[k] += dist(&args->data[m * args->N],
+    accum[k] += dist_calc(&args->data[m * args->N],
                      &args->clusterCentroids[k * args->N], args->N);
   }
 
@@ -174,6 +213,9 @@ void computeCost(WorkerArgs *const args) {
 void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignments,
                int M, int N, int K, double epsilon) {
 
+  double totalTime = CycleTimer::currentSeconds();
+  double initTime = CycleTimer::currentSeconds();
+
   // Used to track convergence
   double *prevCost = new double[K];
   double *currCost = new double[K];
@@ -195,24 +237,81 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
     currCost[k] = 0.0;
   }
 
+  initTime = CycleTimer::currentSeconds() - initTime;
+  printf("Init time: %.3f ms\n", initTime * 1000);
+
+  double assignmentsTime = 0.0;
+  double centroidsTime = 0.0;
+  double costTime = 0.0;
+  double convergenceTime = 0.0;
+  double stoppingConditionTime = 0.0;
+  double iterationOverheadTime = 0.0;
+
   /* Main K-Means Algorithm Loop */
   int iter = 0;
   while (!stoppingConditionMet(prevCost, currCost, epsilon, K)) {
+    double iterStart = CycleTimer::currentSeconds();
+    
     // Update cost arrays (for checking convergence criteria)
+    double convStart = CycleTimer::currentSeconds();
     for (int k = 0; k < K; k++) {
       prevCost[k] = currCost[k];
     }
+    convergenceTime += CycleTimer::currentSeconds() - convStart;
 
     // Setup args struct
     args.start = 0;
     args.end = K;
 
+    double assignStart = CycleTimer::currentSeconds();
     computeAssignments(&args);
+    assignmentsTime += CycleTimer::currentSeconds() - assignStart;
+
+    double centroidStart = CycleTimer::currentSeconds();
     computeCentroids(&args);
+    centroidsTime += CycleTimer::currentSeconds() - centroidStart;
+
+    double costStart = CycleTimer::currentSeconds();
     computeCost(&args);
+    costTime += CycleTimer::currentSeconds() - costStart;
+
+    double stoppingStart = CycleTimer::currentSeconds();
+    bool converged = stoppingConditionMet(prevCost, currCost, epsilon, K);
+    stoppingConditionTime += CycleTimer::currentSeconds() - stoppingStart;
 
     iter++;
+    
+    double iterTime = CycleTimer::currentSeconds() - iterStart;
+    double measuredTime = assignmentsTime + centroidsTime + costTime + convergenceTime + stoppingConditionTime;
+    iterationOverheadTime += iterTime - (CycleTimer::currentSeconds() - iterStart);
+    
+    if (iter % 10 == 0) {
+      printf("Iter %d: %.3f ms (assign: %.3f, centroid: %.3f, cost: %.3f, conv: %.3f, stop: %.3f)\n", 
+             iter, iterTime * 1000, 
+             (CycleTimer::currentSeconds() - assignStart) * 1000,
+             (CycleTimer::currentSeconds() - centroidStart) * 1000,
+             (CycleTimer::currentSeconds() - costStart) * 1000,
+             convergenceTime * 1000,
+             stoppingConditionTime * 1000);
+    }
   }
+
+  totalTime = CycleTimer::currentSeconds() - totalTime;
+  
+  printf("\nTiming breakdown:\n");
+  printf("Total time: %.3f ms\n", totalTime * 1000);
+  printf("Init time: %.3f ms (%.1f%%)\n", initTime * 1000, (initTime/totalTime)*100);
+  printf("Assignments: %.3f ms (%.1f%%)\n", assignmentsTime * 1000, (assignmentsTime/totalTime)*100);
+  printf("Centroids: %.3f ms (%.1f%%)\n", centroidsTime * 1000, (centroidsTime/totalTime)*100);
+  printf("Cost: %.3f ms (%.1f%%)\n", costTime * 1000, (costTime/totalTime)*100);
+  printf("Convergence: %.3f ms (%.1f%%)\n", convergenceTime * 1000, (convergenceTime/totalTime)*100);
+  printf("Stopping condition: %.3f ms (%.1f%%)\n", stoppingConditionTime * 1000, (stoppingConditionTime/totalTime)*100);
+  printf("Iterations: %d\n", iter);
+  
+  double accountedTime = initTime + assignmentsTime + centroidsTime + costTime + convergenceTime + stoppingConditionTime;
+  double unaccountedTime = totalTime - accountedTime;
+  printf("\nAccounted time: %.3f ms (%.1f%%)\n", accountedTime * 1000, (accountedTime/totalTime)*100);
+  printf("Unaccounted time: %.3f ms (%.1f%%)\n", unaccountedTime * 1000, (unaccountedTime/totalTime)*100);
 
   free(currCost);
   free(prevCost);
